@@ -60,6 +60,12 @@ namespace GitHub.Runner.Common
                     Add<T>(extensions, "GitHub.Runner.Worker.AddPathFileCommand, Runner.Worker");
                     Add<T>(extensions, "GitHub.Runner.Worker.SetEnvFileCommand, Runner.Worker");
                     break;
+                case "GitHub.Runner.Listener.ICheckExtension":
+                    Add<T>(extensions, "GitHub.Runner.Listener.InternetCheck, Runner.Listener");
+                    Add<T>(extensions, "GitHub.Runner.Listener.GhesCheck, Runner.Listener");
+                    Add<T>(extensions, "GitHub.Runner.Listener.GitCheck, Runner.Listener");
+                    Add<T>(extensions, "GitHub.Runner.Listener.NodeJsCheck, Runner.Listener");
+                    break;
                 default:
                     // This should never happen.
                     throw new NotSupportedException($"Unexpected extension type: '{typeof(T).FullName}'");

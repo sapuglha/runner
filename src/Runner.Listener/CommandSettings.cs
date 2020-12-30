@@ -27,6 +27,7 @@ namespace GitHub.Runner.Listener
 
         private readonly string[] validFlags =
         {
+            Constants.Runner.CommandLine.Flags.Check,
             Constants.Runner.CommandLine.Flags.Commit,
             Constants.Runner.CommandLine.Flags.Help,
             Constants.Runner.CommandLine.Flags.Replace,
@@ -60,6 +61,7 @@ namespace GitHub.Runner.Listener
         public bool Warmup => TestCommand(Constants.Runner.CommandLine.Commands.Warmup);
 
         // Flags.
+        public bool Check => TestFlag(Constants.Runner.CommandLine.Flags.Check);
         public bool Commit => TestFlag(Constants.Runner.CommandLine.Flags.Commit);
         public bool Help => TestFlag(Constants.Runner.CommandLine.Flags.Help);
         public bool Unattended => TestFlag(Constants.Runner.CommandLine.Flags.Unattended);
