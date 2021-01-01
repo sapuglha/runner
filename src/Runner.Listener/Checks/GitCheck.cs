@@ -41,12 +41,17 @@ namespace GitHub.Runner.Listener
             _gitPath = WhichUtil.Which("git");
         }
 
-        // 4. git access to ghes/gh 
+        // git access to ghes/gh 
         public async Task<bool> RunCheck(string url, string pat)
         {
             var result = new CheckResult();
             try
             {
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****     Validate server cert and proxy configuration with Git ");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
                 var repoUrlBuilder = new UriBuilder(url);
                 repoUrlBuilder.Path = "actions/checkout";
                 repoUrlBuilder.UserName = "github";
@@ -66,13 +71,14 @@ namespace GitHub.Runner.Listener
                         gitProxy = $"-c http.proxy={proxy.AbsoluteUri}";
                     }
                 }
+
                 using (var processInvoker = HostContext.CreateService<IProcessInvoker>())
                 {
                     processInvoker.OutputDataReceived += new EventHandler<ProcessDataReceivedEventArgs>((sender, args) =>
                     {
                         if (!string.IsNullOrEmpty(args.Data))
                         {
-                            result.Logs.Add(args.Data);
+                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} {args.Data}");
                         }
                     });
 
@@ -80,11 +86,13 @@ namespace GitHub.Runner.Listener
                     {
                         if (!string.IsNullOrEmpty(args.Data))
                         {
-                            result.Logs.Add(args.Data);
+                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} {args.Data}");
                         }
                     });
 
-                    await processInvoker.ExecuteAsync(HostContext.GetDirectory(WellKnownDirectory.Root), _gitPath, $"{gitProxy} ls-remote --exit-code {repoUrlBuilder.Uri.AbsoluteUri} HEAD", new Dictionary<string, string> { { "GIT_TRACE", "1" }, { "GIT_CURL_VERBOSE", "1" } }, true, CancellationToken.None);
+                    var gitArgs = $"{gitProxy} ls-remote --exit-code {repoUrlBuilder.Uri.AbsoluteUri} HEAD";
+                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Run 'git {gitArgs}' ");
+                    await processInvoker.ExecuteAsync(HostContext.GetDirectory(WellKnownDirectory.Root), _gitPath, gitArgs, new Dictionary<string, string> { { "GIT_TRACE", "1" }, { "GIT_CURL_VERBOSE", "1" } }, true, CancellationToken.None);
                 }
 
                 result.Pass = true;
@@ -92,7 +100,7 @@ namespace GitHub.Runner.Listener
             catch (Exception ex)
             {
                 result.Pass = false;
-                result.Logs.Add($"git ls-remote https://github.com/actions/runner failed with error: {ex}");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} git ls-remote failed with error: {ex}");
             }
 
             await File.AppendAllLinesAsync(_logFile, result.Logs);

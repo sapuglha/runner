@@ -62,7 +62,7 @@ namespace GitHub.Runner.Common
                     break;
                 case "GitHub.Runner.Listener.ICheckExtension":
                     Add<T>(extensions, "GitHub.Runner.Listener.InternetCheck, Runner.Listener");
-                    Add<T>(extensions, "GitHub.Runner.Listener.GhesCheck, Runner.Listener");
+                    Add<T>(extensions, "GitHub.Runner.Listener.ActionsCheck, Runner.Listener");
                     Add<T>(extensions, "GitHub.Runner.Listener.GitCheck, Runner.Listener");
                     Add<T>(extensions, "GitHub.Runner.Listener.NodeJsCheck, Runner.Listener");
                     break;
