@@ -1,27 +1,25 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net.Http;
 using System.Threading.Tasks;
 using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
-using GitHub.Services.Common;
 
-namespace GitHub.Runner.Listener
+namespace GitHub.Runner.Listener.Check
 {
     public sealed class ActionsCheck : RunnerService, ICheckExtension
     {
-        private string _logFile = "";
+        private string _logFile = null;
 
         public int Order => 20;
 
         public string CheckName => "GitHub Actions Connection";
 
-        public string CheckDescription => "Make sure the actions runner have access to the Actions Service in GitHub or GitHub Enterprise Server.";
+        public string CheckDescription => "Make sure the actions runner have access to the GitHub Actions Service.";
 
         public string CheckLog => _logFile;
 
-        public string HelpLink => "https://github.com/actions/runner/docs/checks/actionsconnection.md";
+        public string HelpLink => "https://github.com/actions/runner/docs/checks/actions.md";
 
         public Type ExtensionType => typeof(ICheckExtension);
 
@@ -59,9 +57,17 @@ namespace GitHub.Runner.Listener
                 actionsPipelinesServiceUrl = urlBuilder.Uri.AbsoluteUri;
             }
 
-            checkTasks.Add(CheckHttpsRequests(githubApiUrl, "X-GitHub-Request-Id"));
-            checkTasks.Add(CheckHttpsRequests(actionsTokenServiceUrl, "x-vss-e2eid"));
-            checkTasks.Add(CheckHttpsRequests(actionsPipelinesServiceUrl, "x-vss-e2eid"));
+            checkTasks.Add(CheckUtil.CheckDns(githubApiUrl));
+            checkTasks.Add(CheckUtil.CheckPing(githubApiUrl));
+            checkTasks.Add(HostContext.CheckHttpsRequests(githubApiUrl, "X-GitHub-Request-Id"));
+
+            checkTasks.Add(CheckUtil.CheckDns(actionsTokenServiceUrl));
+            checkTasks.Add(CheckUtil.CheckPing(actionsTokenServiceUrl));
+            checkTasks.Add(HostContext.CheckHttpsRequests(actionsTokenServiceUrl, "x-vss-e2eid"));
+
+            checkTasks.Add(CheckUtil.CheckDns(actionsPipelinesServiceUrl));
+            checkTasks.Add(CheckUtil.CheckPing(actionsPipelinesServiceUrl));
+            checkTasks.Add(HostContext.CheckHttpsRequests(actionsPipelinesServiceUrl, "x-vss-e2eid"));
 
             while (checkTasks.Count > 0)
             {
@@ -73,73 +79,6 @@ namespace GitHub.Runner.Listener
             }
 
             await Task.WhenAll(checkTasks);
-            return result;
-        }
-
-        private async Task<CheckResult> CheckHttpsRequests(string url, string expectedHeader)
-        {
-            var result = new CheckResult();
-            try
-            {
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****     Send HTTPS Request to {url} ");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                using (var _ = new HttpEventSourceListener(result.Logs))
-                using (var httpClientHandler = HostContext.CreateHttpClientHandler())
-                using (var httpClient = new HttpClient(httpClientHandler))
-                {
-                    httpClient.DefaultRequestHeaders.UserAgent.AddRange(HostContext.UserAgents);
-                    var response = await httpClient.GetAsync(url);
-
-                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http status code: {response.StatusCode}");
-                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http response headers: {response.Headers}");
-
-                    var responseContent = await response.Content.ReadAsStringAsync();
-                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http response body: {responseContent}");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        if (response.Headers.Contains(expectedHeader))
-                        {
-                            result.Pass = true;
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http request 'GET' to {url} succeed");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                        }
-                        else
-                        {
-                            result.Pass = false;
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http request 'GET' to {url} succeed but doesn't have expected HTTP Header.");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                        }
-                    }
-                    else
-                    {
-                        result.Pass = false;
-                        result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                        result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Http request 'GET' to {url} failed with {response.StatusCode}");
-                        result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                        result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                        result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                result.Pass = false;
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Https request 'GET' to {url} failed with error: {ex}");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
-            }
-
             return result;
         }
     }

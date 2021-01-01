@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using GitHub.Runner.Common;
 
-namespace GitHub.Runner.Listener
+namespace GitHub.Runner.Listener.Check
 {
     public interface ICheckExtension : IExtension
     {

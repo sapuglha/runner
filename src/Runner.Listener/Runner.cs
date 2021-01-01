@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
 using System.Linq;
+using GitHub.Runner.Listener.Check;
 
 namespace GitHub.Runner.Listener
 {

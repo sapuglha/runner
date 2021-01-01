@@ -2,20 +2,14 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Tracing;
 using System.IO;
-using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.NetworkInformation;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
-using GitHub.Services.Common;
 
-namespace GitHub.Runner.Listener
+namespace GitHub.Runner.Listener.Check
 {
     public sealed class GitCheck : RunnerService, ICheckExtension
     {
@@ -54,13 +48,14 @@ namespace GitHub.Runner.Listener
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
                 var repoUrlBuilder = new UriBuilder(url);
                 repoUrlBuilder.Path = "actions/checkout";
-                repoUrlBuilder.UserName = "github";
+                repoUrlBuilder.UserName = "gh";
                 repoUrlBuilder.Password = pat;
 
                 var gitProxy = "";
                 var proxy = HostContext.WebProxy.GetProxy(repoUrlBuilder.Uri);
                 if (proxy != null)
                 {
+                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Runner is behind http proxy '{proxy.AbsoluteUri}'");
                     if (HostContext.WebProxy.Credentials is NetworkCredential proxyCred)
                     {
                         var proxyUrlWithCred = UrlUtil.GetCredentialEmbeddedUrl(proxy, proxyCred.UserName, proxyCred.Password);
@@ -92,7 +87,13 @@ namespace GitHub.Runner.Listener
 
                     var gitArgs = $"{gitProxy} ls-remote --exit-code {repoUrlBuilder.Uri.AbsoluteUri} HEAD";
                     result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Run 'git {gitArgs}' ");
-                    await processInvoker.ExecuteAsync(HostContext.GetDirectory(WellKnownDirectory.Root), _gitPath, gitArgs, new Dictionary<string, string> { { "GIT_TRACE", "1" }, { "GIT_CURL_VERBOSE", "1" } }, true, CancellationToken.None);
+                    await processInvoker.ExecuteAsync(
+                        HostContext.GetDirectory(WellKnownDirectory.Root),
+                        _gitPath,
+                        gitArgs,
+                        new Dictionary<string, string> { { "GIT_TRACE", "1" }, { "GIT_CURL_VERBOSE", "1" } },
+                        true,
+                        CancellationToken.None);
                 }
 
                 result.Pass = true;

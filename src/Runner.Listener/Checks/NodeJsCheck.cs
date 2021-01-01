@@ -2,20 +2,15 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Tracing;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.NetworkInformation;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using GitHub.Runner.Common;
 using GitHub.Runner.Sdk;
-using GitHub.Services.Common;
 
-namespace GitHub.Runner.Listener
+namespace GitHub.Runner.Listener.Check
 {
     public sealed class NodeJsCheck : RunnerService, ICheckExtension
     {
@@ -209,7 +204,7 @@ http.request(options).on('connect', (res, socket) => {
 
         public string CheckLog => _logFile;
 
-        public string HelpLink => "https://github.com/actions/runner/docs/checks/nodejsconnection.md";
+        public string HelpLink => "https://github.com/actions/runner/docs/checks/nodejs.md";
 
         public Type ExtensionType => typeof(ICheckExtension);
 
