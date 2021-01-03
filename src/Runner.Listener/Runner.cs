@@ -76,7 +76,7 @@ namespace GitHub.Runner.Listener
                 if (command.Check)
                 {
                     var url = command.GetUrl();
-                    var pat = command.GetGitHubPersonalAccessToken();
+                    var pat = command.GetGitHubPersonalAccessToken(required: true);
                     var checkExtensions = HostContext.GetService<IExtensionManager>().GetExtensions<ICheckExtension>();
                     var sortedChecks = checkExtensions.OrderBy(x => x.Order);
                     foreach (var check in sortedChecks)

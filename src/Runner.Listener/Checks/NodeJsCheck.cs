@@ -14,186 +14,84 @@ namespace GitHub.Runner.Listener.Check
 {
     public sealed class NodeJsCheck : RunnerService, ICheckExtension
     {
-        private const string _nodejsScript = @"
+        private const string _nodejsTestScript = @"
 const https = require('https')
-const options = {
-  hostname: '<HOSTNAME>',
-  port: <PORT>,
-  path: '/',
-  method: 'GET',
-  headers: { 'User-Agent': 'GitHubActionsRunnerCheck/1.0' }
-}
-const req = https.request(options, res => {
-  console.log(`statusCode: ${res.statusCode}`)
-  console.log(`headers: ${JSON.stringify(res.headers)}`)
+const http = require('http')
+const hostname = '<HOSTNAME>'
+const port = '<PORT>'
+const path = '<PATH>'
+const pat = '<PAT>'
+const proxyHost = '<PROXYHOST>'
+const proxyPort = '<PROXYPORT>'
+const proxyUsername = '<PROXYUSERNAME>'
+const proxyPassword = '<PROXYPASSWORD>'
 
-  res.on('data', d => {
-    process.stdout.write(d)
-  })
-})
-req.on('error', error => {
-  console.error(error)
-})
-req.end()
-";
-
-        private const string _nodejsCertScript = @"
-const https = require('https')
-const fs = require('fs')
-const options = {
-    hostname: '<HOSTNAME>',
-    port: <PORT>,
-    path: '/',
-    method: 'GET',
-    headers: { 'User-Agent': 'GitHubActionsRunnerCheck/1.0' },
-    rejectUnauthorized: false
-}
-const req = https.request(options, res => {
-    console.log(`statusCode: ${res.statusCode}`)
-    console.log(`headers: ${JSON.stringify(res.headers)}`)
-    let cert = socket.getPeerCertificate(true)
-    let certPEM = ''
-    let fingerprints = {}
-    while (cert != null && fingerprints[cert.fingerprint] != '1') {
-        fingerprints[cert.fingerprint] = '1'
-        certPEM = certPEM + '-----BEGIN CERTIFICATE-----\n'
-        let certEncoded = cert.raw.toString('base64')
-        for (let i = 0; i < certEncoded.length; i++) {
-            certPEM = certPEM + certEncoded[i]
-            if (i != certEncoded.length - 1 && (i + 1) % 64 == 0) {
-                certPEM = certPEM + '\n'
-            }
+if (proxyHost === '') {
+    const options = {
+        hostname: hostname,
+        port: port,
+        path: path,
+        method: 'GET',
+        headers: {
+            'User-Agent': 'GitHubActionsRunnerCheck/1.0',
+            'Authorization': `token ${pat}`,
         }
-        certPEM = certPEM + '\n-----END CERTIFICATE-----\n'
-        cert = cert.issuerCertificate
     }
-    console.log(certPEM)
-    fs.writeFileSync('./cacert.pem', certPEM)
-    res.on('data', d => {
-        process.stdout.write(d)
+    const req = https.request(options, res => {
+        console.log(`statusCode: ${res.statusCode}`)
+        console.log(`headers: ${JSON.stringify(res.headers)}`)
+
+        res.on('data', d => {
+            process.stdout.write(d)
+        })
     })
-})
-req.on('error', error => {
-  console.error(error)
-})
-req.end()
-";
-
-        private const string _nodejsWithProxyScript = @"
-const http = require('http')
-const https = require('https')
-const hostname = '<HOSTNAME>'
-const port = '<PORT>'
-const proxyHost = '<PROXYHOST>'
-const proxyPort = '<PROXYPORT>'
-const username = '<PROXYUSERNAME>'
-const password = '<PROXYPASSWORD>'
-const auth = 'Basic ' + Buffer.from(username + ':' + password).toString('base64')
-
-const options = {
-    hostname: proxyHost,
-    port: proxyPort,
-    method: 'CONNECT',
-    path: `${hostname}:${port}`
+    req.on('error', error => {
+        console.error(error)
+    })
+    req.end()
 }
-
-if (username != '' || password != '') {
-    options.headers = {
-        'Proxy-Authorization': auth,
+else {
+    const proxyAuth = 'Basic ' + Buffer.from(proxyUsername + ':' + proxyPassword).toString('base64')
+    const options = {
+        hostname: proxyHost,
+        port: proxyPort,
+        method: 'CONNECT',
+        path: `${hostname}:${port}`
     }
-}
-http.request(options).on('connect', (res, socket) => {
-    if (res.statusCode === 200) {
+
+    if (proxyUsername != '' || proxyPassword != '') {
+        options.headers = {
+            'Proxy-Authorization': proxyAuth,
+        }
+    }
+    http.request(options).on('connect', (res, socket) => {
+        if (res.statusCode != 200) {
+            throw new Error(`Proxy returns code: ${res.statusCode}`)
+        }
         https.get({
             host: hostname,
             port: port,
             socket: socket,
             agent: false,
-            path: '/',
+            path: path,
             headers: {
-                'User-Agent': 'GitHubActionsRunnerCheck/1.0'
+                'User-Agent': 'GitHubActionsRunnerCheck/1.0',
+                'Authorization': `token ${pat}`,
             }
         }, (res) => {
-            let chunks = []
-            res.on('data', chunk => chunks.push(chunk))
-            res.on('end', () => {
-                console.log('DONE', Buffer.concat(chunks).toString('utf8'))
+            console.log(`statusCode: ${res.statusCode}`)
+            console.log(`headers: ${JSON.stringify(res.headers)}`)
+
+            res.on('data', d => {
+                process.stdout.write(d)
             })
         })
-    }
-}).on('error', (err) => {
-    console.error('error', err)
-}).end()
+    }).on('error', (err) => {
+        console.error('error', err)
+    }).end()
+}
 ";
 
-        private const string _nodejsCertWithProxyScript = @"
-const http = require('http')
-const https = require('https')
-const fs = require('fs')
-const hostname = '<HOSTNAME>'
-const port = '<PORT>'
-const proxyHost = '<PROXYHOST>'
-const proxyPort = '<PROXYPORT>'
-const username = '<PROXYUSERNAME>'
-const password = '<PROXYPASSWORD>'
-const auth = 'Basic ' + Buffer.from(username + ':' + password).toString('base64')
-
-const options = {
-    host: proxyHost,
-    port: proxyPort,
-    method: 'CONNECT',
-    path: `${hostname}:${port}`,
-}
-
-if (username != '' || password != '') {
-    options.headers = {
-        'Proxy-Authorization': auth,
-    }
-}
-
-process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
-
-http.request(options).on('connect', (res, socket) => {
-    if (res.statusCode === 200) {
-        https.get({
-            host: hostname,
-            port: port,
-            socket: socket,
-            agent: false,
-            path: '/',
-            headers: {
-                'User-Agent': 'GitHubActionsRunnerCheck/1.0'
-            }
-        }, (res) => {
-            let cert = res.socket.getPeerCertificate(true)
-            let certPEM = ''
-            let fingerprints = {}
-            while (cert != null && fingerprints[cert.fingerprint] != '1') {
-                fingerprints[cert.fingerprint] = '1'
-                certPEM = certPEM + '-----BEGIN CERTIFICATE-----\n'
-                let certEncoded = cert.raw.toString('base64')
-                for (let i = 0; i < certEncoded.length; i++) {
-                    certPEM = certPEM + certEncoded[i]
-                    if (i != certEncoded.length - 1 && (i + 1) % 64 == 0) {
-                        certPEM = certPEM + '\n'
-                    }
-                }
-                certPEM = certPEM + '\n-----END CERTIFICATE-----\n'
-                cert = cert.issuerCertificate
-            }
-            console.log(certPEM)
-            fs.writeFileSync('./cacert.pem', certPEM)
-            let chunks = []
-            res.on('data', chunk => chunks.push(chunk))
-            res.on('end', () => {
-                console.log('DONE', Buffer.concat(chunks).toString('utf8'))
-            })
-        })
-    }
-}).on('error', (err) => {
-    console.error('error', err)
-}).end()
-";
         private string _logFile = null;
 
         public int Order => 50;
@@ -217,100 +115,47 @@ http.request(options).on('connect', (res, socket) => {
         // node access to ghes/gh
         public async Task<bool> RunCheck(string url, string pat)
         {
-            var result = true;
-            var checkTasks = new List<Task<CheckResult>>();
+            await File.AppendAllLinesAsync(_logFile, HostContext.CheckProxy());
 
-            checkTasks.Add(CheckNodeJs(url, pat));
-
-            while (checkTasks.Count > 0)
+            // Request to github.com or ghes server
+            var urlBuilder = new UriBuilder(url);
+            if (UrlUtil.IsHostedServer(urlBuilder))
             {
-                var finishedCheckTask = await Task.WhenAny<CheckResult>(checkTasks);
-                var finishedCheck = await finishedCheckTask;
-                result = result && finishedCheck.Pass;
-                await File.AppendAllLinesAsync(_logFile, finishedCheck.Logs);
-                checkTasks.Remove(finishedCheckTask);
-
-                if (finishedCheck.SslError)
-                {
-                    checkTasks.Add(CheckNodeJsWithExtraCA(url, pat));
-                }
+                urlBuilder.Host = $"api.{urlBuilder.Host}";
+                urlBuilder.Path = "";
+            }
+            else
+            {
+                urlBuilder.Path = "api/v3";
             }
 
-            await Task.WhenAll(checkTasks);
-            return result;
-        }
+            var checkNode = await CheckNodeJs(urlBuilder.Uri.AbsoluteUri, pat);
+            var result = checkNode.Pass;
+            await File.AppendAllLinesAsync(_logFile, checkNode.Logs);
 
-        private async Task<CheckResult> CheckNodeJsWithExtraCA(string url, string pat)
-        {
-            var result = new CheckResult();
-            var node12 = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Externals), "node12", "bin", $"node{IOUtil.ExeExtension}");
-            try
+            // try fix SSL error by providing extra CA certificate.
+            if (checkNode.SslError)
             {
-                // Request to untrusted-root.badssl.com
-                var tempJsFile = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Diag), StringUtil.Format("{0}_{1:yyyyMMdd-HHmmss}-utc.js", nameof(NodeJsCheck), DateTime.UtcNow));
-                var repoUrlBuilder = new UriBuilder(url);
-                var proxy = HostContext.WebProxy.GetProxy(repoUrlBuilder.Uri);
-                if (proxy != null)
+                var downloadCert = await HostContext.DownloadExtraCA(urlBuilder.Uri.AbsoluteUri, pat);
+                await File.AppendAllLinesAsync(_logFile, downloadCert.Logs);
+
+                if (downloadCert.Pass)
                 {
-                    var script = _nodejsCertWithProxyScript.Replace("<HOSTNAME>", "untrusted-root.badssl.com").Replace("<PORT>", "443").Replace("<PROXYHOST>", proxy.Host).Replace("<PROXYPORT>", proxy.Port.ToString());
-                    if (HostContext.WebProxy.Credentials is NetworkCredential proxyCred)
+                    var recheckNode = await CheckNodeJs(urlBuilder.Uri.AbsoluteUri, pat, true);
+                    await File.AppendAllLinesAsync(_logFile, recheckNode.Logs);
+                    if (recheckNode.Pass)
                     {
-                        script = script.Replace("<PROXYUSERNAME>", proxyCred.UserName).Replace("<PROXYPASSWORD>", proxyCred.Password);
+                        await File.AppendAllLinesAsync(_logFile, new[] { $"{DateTime.UtcNow.ToString("O")} Fixed SSL error by providing extra CA certs." });
                     }
-                    else
-                    {
-                        script = script.Replace("<PROXYUSERNAME>", "").Replace("<PROXYPASSWORD>", "");
-                    }
-
-                    await File.WriteAllTextAsync(tempJsFile, script);
                 }
-                else
-                {
-                    await File.WriteAllTextAsync(tempJsFile, _nodejsCertScript.Replace("<HOSTNAME>", "untrusted-root.badssl.com").Replace("<PORT>", "443"));
-                }
-
-                using (var processInvoker = HostContext.CreateService<IProcessInvoker>())
-                {
-                    processInvoker.OutputDataReceived += new EventHandler<ProcessDataReceivedEventArgs>((sender, args) =>
-                    {
-                        if (!string.IsNullOrEmpty(args.Data))
-                        {
-                            result.Logs.Add(args.Data);
-                        }
-                    });
-
-                    processInvoker.ErrorDataReceived += new EventHandler<ProcessDataReceivedEventArgs>((sender, args) =>
-                    {
-                        if (!string.IsNullOrEmpty(args.Data))
-                        {
-                            result.Logs.Add($"[ERROR] {args.Data}");
-                        }
-                    });
-
-                    await processInvoker.ExecuteAsync(HostContext.GetDirectory(WellKnownDirectory.Root), node12, $"\"{tempJsFile}\"", new Dictionary<string, string> { }, true, CancellationToken.None);
-                }
-
-                var recheck = await CheckNodeJs(url, pat);
-                result.Logs.AddRange(recheck.Logs);
-                result.Pass = recheck.Pass;
-                if (result.Pass)
-                {
-                    result.Logs.Add("Fixed SSL error by providing extra CA certs.");
-                }
-            }
-            catch (Exception ex)
-            {
-                result.Pass = false;
-                result.Logs.Add($"Make https request to github.com using node.js and extra CA failed with error: {ex}");
             }
 
             return result;
         }
 
-        private async Task<CheckResult> CheckNodeJs(string url, string pat)
+        private async Task<CheckResult> CheckNodeJs(string url, string pat, bool extraCA = false)
         {
             var result = new CheckResult();
-            var node12 = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Externals), "node12", "bin", $"node{IOUtil.ExeExtension}");
             try
             {
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
@@ -332,27 +177,38 @@ http.request(options).on('connect', (res, socket) => {
                 }
                 requestUrl = urlBuilder.Uri;
 
-                var tempJsFile = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Diag), StringUtil.Format("{0}_{1:yyyyMMdd-HHmmss}-utc.js", nameof(NodeJsCheck), DateTime.UtcNow));
-                var repoUrlBuilder = new UriBuilder(url);
-                var proxy = HostContext.WebProxy.GetProxy(repoUrlBuilder.Uri);
+                var tempScript = _nodejsTestScript.Replace("<HOSTNAME>", requestUrl.Host)
+                                                  .Replace("<PORT>", requestUrl.IsDefaultPort ? (requestUrl.Scheme.ToLowerInvariant() == "https" ? "443" : "80") : requestUrl.Port.ToString())
+                                                  .Replace("<PATH>", requestUrl.AbsolutePath)
+                                                  .Replace("<PAT>", pat);
+
+                var proxy = HostContext.WebProxy.GetProxy(requestUrl);
                 if (proxy != null)
                 {
-                    var script = _nodejsWithProxyScript.Replace("<HOSTNAME>", "untrusted-root.badssl.com").Replace("<PORT>", "443").Replace("<PROXYHOST>", proxy.Host).Replace("<PROXYPORT>", proxy.Port.ToString());
+                    tempScript = tempScript.Replace("<PROXYHOST>", proxy.Host)
+                                           .Replace("<PROXYPORT>", proxy.IsDefaultPort ? (proxy.Scheme.ToLowerInvariant() == "https" ? "443" : "80") : proxy.Port.ToString());
                     if (HostContext.WebProxy.Credentials is NetworkCredential proxyCred)
                     {
-                        script = script.Replace("<PROXYUSERNAME>", proxyCred.UserName).Replace("<PROXYPASSWORD>", proxyCred.Password);
+                        tempScript = tempScript.Replace("<PROXYUSERNAME>", proxyCred.UserName)
+                                               .Replace("<PROXYPASSWORD>", proxyCred.Password);
                     }
                     else
                     {
-                        script = script.Replace("<PROXYUSERNAME>", "").Replace("<PROXYPASSWORD>", "");
+                        tempScript = tempScript.Replace("<PROXYUSERNAME>", "")
+                                               .Replace("<PROXYPASSWORD>", "");
                     }
-
-                    await File.WriteAllTextAsync(tempJsFile, script);
                 }
                 else
                 {
-                    await File.WriteAllTextAsync(tempJsFile, _nodejsScript.Replace("<HOSTNAME>", "untrusted-root.badssl.com").Replace("<PORT>", "443"));
+                    tempScript = tempScript.Replace("<PROXYHOST>", "")
+                                           .Replace("<PROXYPORT>", "")
+                                           .Replace("<PROXYUSERNAME>", "")
+                                           .Replace("<PROXYPASSWORD>", "");
                 }
+
+                var tempJsFile = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Diag), StringUtil.Format("{0}_{1:yyyyMMdd-HHmmss}-utc.js", nameof(NodeJsCheck), DateTime.UtcNow));
+                await File.WriteAllTextAsync(tempJsFile, tempScript);
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Generate temp node.js script: '{tempJsFile}'");
 
                 using (var processInvoker = HostContext.CreateService<IProcessInvoker>())
                 {
@@ -372,7 +228,21 @@ http.request(options).on('connect', (res, socket) => {
                         }
                     });
 
-                    await processInvoker.ExecuteAsync(HostContext.GetDirectory(WellKnownDirectory.Root), node12, $"\"{tempJsFile}\"", new Dictionary<string, string> { { "NODE_EXTRA_CA_CERTS", Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), "cacert.pem") } }, true, CancellationToken.None);
+                    var node12 = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Externals), "node12", "bin", $"node{IOUtil.ExeExtension}");
+                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Run '{node12} \"{tempJsFile}\"' ");
+
+                    var env = new Dictionary<string, string>();
+                    if (extraCA)
+                    {
+                        env["NODE_EXTRA_CA_CERTS"] = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), "download_ca_cert.pem");
+                    }
+                    await processInvoker.ExecuteAsync(
+                        HostContext.GetDirectory(WellKnownDirectory.Root),
+                        node12,
+                        $"\"{tempJsFile}\"",
+                        env,
+                        true,
+                        CancellationToken.None);
                 }
 
                 result.Pass = true;
@@ -380,7 +250,7 @@ http.request(options).on('connect', (res, socket) => {
             catch (Exception ex)
             {
                 result.Pass = false;
-                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Make https request to github.com using node.js failed with error: {ex}");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Make https request to {url} using node.js failed with error: {ex}");
                 if (result.Logs.Any(x => x.Contains("UNABLE_TO_VERIFY_LEAF_SIGNATURE") ||
                                          x.Contains("UNABLE_TO_GET_ISSUER_CERT_LOCALLY") ||
                                          x.Contains("SELF_SIGNED_CERT_IN_CHAIN")))

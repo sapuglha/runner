@@ -33,8 +33,9 @@ namespace GitHub.Runner.Listener.Check
         public async Task<bool> RunCheck(string url, string pat)
         {
             var result = true;
-            var checkTasks = new List<Task<CheckResult>>();
+            await File.AppendAllLinesAsync(_logFile, HostContext.CheckProxy());
 
+            var checkTasks = new List<Task<CheckResult>>();
             string githubApiUrl = null;
             string actionsTokenServiceUrl = null;
             string actionsPipelinesServiceUrl = null;

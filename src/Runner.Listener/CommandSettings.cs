@@ -190,9 +190,20 @@ namespace GitHub.Runner.Listener
                 validator: Validators.NonEmptyValidator);
         }
 
-        public string GetGitHubPersonalAccessToken()
+        public string GetGitHubPersonalAccessToken(bool required = false)
         {
-            return GetArg(name: Constants.Runner.CommandLine.Args.PAT);
+            if (required)
+            {
+                return GetArgOrPrompt(
+                    name: Constants.Runner.CommandLine.Args.PAT,
+                    description: "What is your GitHub personal access token?",
+                    defaultValue: string.Empty,
+                    validator: Validators.NonEmptyValidator);
+            }
+            else
+            {
+                return GetArg(name: Constants.Runner.CommandLine.Args.PAT);
+            }
         }
 
         public string GetRunnerRegisterToken()

@@ -1,18 +1,155 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.Tracing;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
+using System.Threading;
 using System.Threading.Tasks;
 using GitHub.Runner.Common;
+using GitHub.Runner.Sdk;
 using GitHub.Services.Common;
 
 namespace GitHub.Runner.Listener.Check
 {
     public static class CheckUtil
     {
+        private const string _nodejsCertDownloadScript = @"
+const https = require('https')
+const fs = require('fs')
+const http = require('http')
+const hostname = '<HOSTNAME>'
+const port = '<PORT>'
+const path = '<PATH>'
+const pat = '<PAT>'
+const proxyHost = '<PROXYHOST>'
+const proxyPort = '<PROXYPORT>'
+const proxyUsername = '<PROXYUSERNAME>'
+const proxyPassword = '<PROXYPASSWORD>'
+
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
+
+if (proxyHost === '') {
+    const options = {
+        hostname: hostname,
+        port: port,
+        path: path,
+        method: 'GET',
+        headers: {
+            'User-Agent': 'GitHubActionsRunnerCheck/1.0',
+            'Authorization': `token ${pat}`
+        },
+    }
+    const req = https.request(options, res => {
+        console.log(`statusCode: ${res.statusCode}`)
+        console.log(`headers: ${JSON.stringify(res.headers)}`)
+        let cert = socket.getPeerCertificate(true)
+        let certPEM = ''
+        let fingerprints = {}
+        while (cert != null && fingerprints[cert.fingerprint] != '1') {
+            fingerprints[cert.fingerprint] = '1'
+            certPEM = certPEM + '-----BEGIN CERTIFICATE-----\n'
+            let certEncoded = cert.raw.toString('base64')
+            for (let i = 0; i < certEncoded.length; i++) {
+                certPEM = certPEM + certEncoded[i]
+                if (i != certEncoded.length - 1 && (i + 1) % 64 == 0) {
+                    certPEM = certPEM + '\n'
+                }
+            }
+            certPEM = certPEM + '\n-----END CERTIFICATE-----\n'
+            cert = cert.issuerCertificate
+        }
+        console.log(certPEM)
+        fs.writeFileSync('./download_ca_cert.pem', certPEM)
+        res.on('data', d => {
+            process.stdout.write(d)
+        })
+    })
+    req.on('error', error => {
+        console.error(error)
+    })
+    req.end()
+}
+else {
+    const auth = 'Basic ' + Buffer.from(proxyUsername + ':' + proxyPassword).toString('base64')
+
+    const options = {
+        host: proxyHost,
+        port: proxyPort,
+        method: 'CONNECT',
+        path: `${hostname}:${port}`,
+    }
+
+    if (proxyUsername != '' || proxyPassword != '') {
+        options.headers = {
+            'Proxy-Authorization': auth,
+        }
+    }
+
+    http.request(options).on('connect', (res, socket) => {
+        if (res.statusCode != 200) {
+            throw new Error(`Proxy returns code: ${res.statusCode}`)
+        }
+
+        https.get({
+            host: hostname,
+            port: port,
+            socket: socket,
+            agent: false,
+            path: '/',
+            headers: {
+                'User-Agent': 'GitHubActionsRunnerCheck/1.0',
+                'Authorization': `token ${pat}`
+            }
+        }, (res) => {
+            let cert = res.socket.getPeerCertificate(true)
+            let certPEM = ''
+            let fingerprints = {}
+            while (cert != null && fingerprints[cert.fingerprint] != '1') {
+                fingerprints[cert.fingerprint] = '1'
+                certPEM = certPEM + '-----BEGIN CERTIFICATE-----\n'
+                let certEncoded = cert.raw.toString('base64')
+                for (let i = 0; i < certEncoded.length; i++) {
+                    certPEM = certPEM + certEncoded[i]
+                    if (i != certEncoded.length - 1 && (i + 1) % 64 == 0) {
+                        certPEM = certPEM + '\n'
+                    }
+                }
+                certPEM = certPEM + '\n-----END CERTIFICATE-----\n'
+                cert = cert.issuerCertificate
+            }
+            console.log(certPEM)
+            fs.writeFileSync('./download_ca_cert.pem', certPEM)
+            console.log(`statusCode: ${res.statusCode}`)
+            console.log(`headers: ${JSON.stringify(res.headers)}`)
+            res.on('data', d => {
+                process.stdout.write(d)
+            })
+        })
+    }).on('error', (err) => {
+        console.error('error', err)
+    }).end()
+}
+";
+
+        public static List<string> CheckProxy(this IHostContext hostContext)
+        {
+            var logs = new List<string>();
+            if (!string.IsNullOrEmpty(hostContext.WebProxy.HttpProxyAddress) ||
+                !string.IsNullOrEmpty(hostContext.WebProxy.HttpsProxyAddress))
+            {
+                logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
+                logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                logs.Add($"{DateTime.UtcNow.ToString("O")} ****     Runner is behind web proxy {hostContext.WebProxy.HttpsProxyAddress ?? hostContext.WebProxy.HttpProxyAddress} ");
+                logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
+            }
+
+            return logs;
+        }
+
         public static async Task<CheckResult> CheckDns(string targetUrl)
         {
             var result = new CheckResult();
@@ -138,6 +275,84 @@ namespace GitHub.Runner.Listener.Check
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ");
+            }
+
+            return result;
+        }
+
+        public static async Task<CheckResult> DownloadExtraCA(this IHostContext hostContext, string url, string pat)
+        {
+            var result = new CheckResult();
+            try
+            {
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****     Download SSL Certificate from {url} ");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ****                                                                                                       ****");
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} ***************************************************************************************************************");
+
+                var uri = new Uri(url);
+                var tempScript = _nodejsCertDownloadScript.Replace("<HOSTNAME>", uri.Host)
+                                                          .Replace("<PORT>", uri.IsDefaultPort ? (uri.Scheme.ToLowerInvariant() == "https" ? "443" : "80") : uri.Port.ToString())
+                                                          .Replace("<PATH>", uri.AbsolutePath)
+                                                          .Replace("<PAT>", pat);
+                var proxy = hostContext.WebProxy.GetProxy(uri);
+                if (proxy != null)
+                {
+                    tempScript = tempScript.Replace("<PROXYHOST>", proxy.Host)
+                                           .Replace("<PROXYPORT>", proxy.IsDefaultPort ? (proxy.Scheme.ToLowerInvariant() == "https" ? "443" : "80") : proxy.Port.ToString());
+                    if (hostContext.WebProxy.Credentials is NetworkCredential proxyCred)
+                    {
+                        tempScript = tempScript.Replace("<PROXYUSERNAME>", proxyCred.UserName)
+                                               .Replace("<PROXYPASSWORD>", proxyCred.Password);
+                    }
+                    else
+                    {
+                        tempScript = tempScript.Replace("<PROXYUSERNAME>", "")
+                                               .Replace("<PROXYPASSWORD>", "");
+                    }
+                }
+                else
+                {
+                    tempScript = tempScript.Replace("<PROXYHOST>", "")
+                                           .Replace("<PROXYPORT>", "")
+                                           .Replace("<PROXYUSERNAME>", "")
+                                           .Replace("<PROXYPASSWORD>", "");
+                }
+
+                var tempJsFile = Path.Combine(hostContext.GetDirectory(WellKnownDirectory.Diag), StringUtil.Format("{0}_{1:yyyyMMdd-HHmmss}-utc.js", nameof(DownloadExtraCA), DateTime.UtcNow));
+                await File.WriteAllTextAsync(tempJsFile, tempScript);
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Generate temp node.js script: '{tempJsFile}'");
+
+                using (var processInvoker = hostContext.CreateService<IProcessInvoker>())
+                {
+                    processInvoker.OutputDataReceived += new EventHandler<ProcessDataReceivedEventArgs>((sender, args) =>
+                    {
+                        if (!string.IsNullOrEmpty(args.Data))
+                        {
+                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} [STDOUT] {args.Data}");
+                        }
+                    });
+
+                    processInvoker.ErrorDataReceived += new EventHandler<ProcessDataReceivedEventArgs>((sender, args) =>
+                    {
+                        if (!string.IsNullOrEmpty(args.Data))
+                        {
+                            result.Logs.Add($"{DateTime.UtcNow.ToString("O")} [STDERR] {args.Data}");
+                        }
+                    });
+
+                    var node12 = Path.Combine(hostContext.GetDirectory(WellKnownDirectory.Externals), "node12", "bin", $"node{IOUtil.ExeExtension}");
+                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Run '{node12} \"{tempJsFile}\"' ");
+                    await processInvoker.ExecuteAsync(hostContext.GetDirectory(WellKnownDirectory.Root), node12, $"\"{tempJsFile}\"", null, true, CancellationToken.None);
+                }
+
+                result.Pass = true;
+            }
+            catch (Exception ex)
+            {
+                result.Pass = false;
+                result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Download SSL Certificate from '{url}' failed with error: {ex}");
             }
 
             return result;

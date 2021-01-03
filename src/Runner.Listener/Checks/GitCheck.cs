@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,6 +38,34 @@ namespace GitHub.Runner.Listener.Check
 
         // git access to ghes/gh 
         public async Task<bool> RunCheck(string url, string pat)
+        {
+            await File.AppendAllLinesAsync(_logFile, HostContext.CheckProxy());
+
+            var checkGit = await CheckGit(url, pat);
+            var result = checkGit.Pass;
+            await File.AppendAllLinesAsync(_logFile, checkGit.Logs);
+
+            // try fix SSL error by providing extra CA certificate.
+            if (checkGit.SslError)
+            {
+                var downloadCert = await HostContext.DownloadExtraCA(url, pat);
+                await File.AppendAllLinesAsync(_logFile, downloadCert.Logs);
+
+                if (downloadCert.Pass)
+                {
+                    var recheckGit = await CheckGit(url, pat, extraCA: true);
+                    await File.AppendAllLinesAsync(_logFile, recheckGit.Logs);
+                    if (recheckGit.Pass)
+                    {
+                        await File.AppendAllLinesAsync(_logFile, new[] { $"{DateTime.UtcNow.ToString("O")} Fixed SSL error by providing extra CA certs." });
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private async Task<CheckResult> CheckGit(string url, string pat, bool extraCA = false)
         {
             var result = new CheckResult();
             try
@@ -87,11 +116,23 @@ namespace GitHub.Runner.Listener.Check
 
                     var gitArgs = $"{gitProxy} ls-remote --exit-code {repoUrlBuilder.Uri.AbsoluteUri} HEAD";
                     result.Logs.Add($"{DateTime.UtcNow.ToString("O")} Run 'git {gitArgs}' ");
+
+                    var env = new Dictionary<string, string>
+                    {
+                        { "GIT_TRACE", "1" },
+                        { "GIT_CURL_VERBOSE", "1" }
+                    };
+
+                    if (extraCA)
+                    {
+                        env["GIT_SSL_CAINFO"] = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Root), "download_ca_cert.pem");
+                    }
+
                     await processInvoker.ExecuteAsync(
                         HostContext.GetDirectory(WellKnownDirectory.Root),
                         _gitPath,
                         gitArgs,
-                        new Dictionary<string, string> { { "GIT_TRACE", "1" }, { "GIT_CURL_VERBOSE", "1" } },
+                        env,
                         true,
                         CancellationToken.None);
                 }
@@ -102,10 +143,14 @@ namespace GitHub.Runner.Listener.Check
             {
                 result.Pass = false;
                 result.Logs.Add($"{DateTime.UtcNow.ToString("O")} git ls-remote failed with error: {ex}");
+                if (result.Logs.Any(x => x.Contains("SSL Certificate problem")))
+                {
+                    result.Logs.Add($"{DateTime.UtcNow.ToString("O")} git ls-remote failed due to SSL cert issue.");
+                    result.SslError = true;
+                }
             }
 
-            await File.AppendAllLinesAsync(_logFile, result.Logs);
-            return result.Pass;
+            return result;
         }
     }
 }
