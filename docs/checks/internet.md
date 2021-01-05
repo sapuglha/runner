@@ -21,7 +21,7 @@ Even the runner is configured to GitHub Enterprise Server, the runner can still 
 - Use `nslookup` to check `api.github.com`
 - Use `ping` to check `api.github.com`
 - Use `curl -v` to check `https://api.github.com`
-- Use `Invoke-WebRequest` from `pwsh`to check `https://api.github.com`
+- Use `Invoke-WebRequest` from `pwsh` to check `https://api.github.com`
 
 Contact network administrator if everything points to the network.  
 
